@@ -16,7 +16,8 @@ import { DEFAULT_SETTINGS, type VaultDriveSettings } from "./types";
  * TODO before first release: replace the placeholder with the real id from
  * the production GCP project.
  */
-const OAUTH_CLIENT_ID = "REPLACE_BEFORE_RELEASE.apps.googleusercontent.com";
+const OAUTH_CLIENT_ID =
+    "892889814916-em9jusvgj0grck9k33kss93os04l02dh.apps.googleusercontent.com";
 
 export default class VaultDrivePlugin extends Plugin {
     settings!: VaultDriveSettings;
