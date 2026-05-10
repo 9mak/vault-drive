@@ -1,0 +1,13 @@
+/* Vault Drive — minimal styles for v0.1 */
+
+.vault-drive-status-good {
+    color: var(--text-success);
+}
+
+.vault-drive-status-bad {
+    color: var(--text-error);
+}
+
+.vault-drive-status-pending {
+    color: var(--text-muted);
+}

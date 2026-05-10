@@ -1,0 +1,16 @@
+# build artifacts
+main.js
+main.js.map
+
+# deps
+node_modules/
+.pnpm-store/
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# secrets — never commit OAuth creds
+**/.env
+**/.dev.vars
