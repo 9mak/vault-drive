@@ -4,7 +4,7 @@
     "description": "Sync vault attachments (non-Markdown files) to Google Drive. Companion to Vault Git.",
     "isDesktopOnly": false,
     "minAppVersion": "1.5.0",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "author": "Vault Drive contributors",
     "authorUrl": "https://github.com/9mak/vault-drive",
     "fundingUrl": ""

@@ -1,6 +1,6 @@
 {
     "name": "vault-drive",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Vault Drive: sync Obsidian vault attachments to Google Drive. Companion to Vault Git.",
     "main": "main.js",
     "scripts": {
