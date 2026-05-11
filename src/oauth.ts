@@ -33,7 +33,14 @@ interface AccessTokenCacheEntry {
     accessToken: string;
     expiresAt: number;
 }
-let cached: AccessTokenCacheEntry | null = null;
+
+/**
+ * Module-level cache keyed by refresh token. Keying by token (rather than a
+ * single global slot) prevents an access token minted for one Google account
+ * from being served to another after the user reconnects with a different
+ * account, or when two Obsidian vaults share the same plugin install.
+ */
+const accessTokenCache = new Map<string, AccessTokenCacheEntry>();
 
 export async function startDeviceAuth(
     clientId: string
@@ -147,6 +154,7 @@ export async function getAccessToken(
         throw new Error("Not authenticated. Run 'Connect to Google Drive'.");
     }
 
+    const cached = accessTokenCache.get(refreshToken);
     if (cached && cached.expiresAt - Date.now() > 60_000) {
         return cached.accessToken;
     }
@@ -169,13 +177,17 @@ export async function getAccessToken(
         );
     }
     const json = res.json as { access_token: string; expires_in: number };
-    cached = {
+    accessTokenCache.set(refreshToken, {
         accessToken: json.access_token,
         expiresAt: Date.now() + json.expires_in * 1000,
-    };
+    });
     return json.access_token;
 }
 
-export function clearAccessTokenCache(): void {
-    cached = null;
+export function clearAccessTokenCache(refreshToken?: string): void {
+    if (refreshToken === undefined) {
+        accessTokenCache.clear();
+    } else {
+        accessTokenCache.delete(refreshToken);
+    }
 }
