@@ -162,16 +162,25 @@ export async function ensureFolder(
     return (created.json as { id: string }).id;
 }
 
-/** Multipart upload of binary content. v0.1 scope. */
-export async function uploadFile(
-    accessToken: string,
-    parentId: string,
-    name: string,
-    content: ArrayBuffer
-): Promise<DriveFile> {
-    const boundary = "----vault-drive-" + Math.random().toString(36).slice(2);
-    const metadata = JSON.stringify({ name, parents: [parentId] });
+/**
+ * 32-hex-char random boundary derived from crypto.getRandomValues so the
+ * envelope can never collide with binary file content (the previous
+ * `Math.random()` 11-char boundary had a non-trivial collision probability
+ * for attacker-controlled inputs).
+ */
+function multipartBoundary(): string {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    let hex = "";
+    for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+    return "----vault-drive-" + hex;
+}
 
+function buildMultipartBody(
+    metadata: string,
+    content: ArrayBuffer
+): { boundary: string; body: ArrayBuffer } {
+    const boundary = multipartBoundary();
     const enc = new TextEncoder();
     const head = enc.encode(
         `--${boundary}\r\n` +
@@ -186,19 +195,66 @@ export async function uploadFile(
     body.set(head, 0);
     body.set(new Uint8Array(content), head.length);
     body.set(tail, head.length + content.byteLength);
+    return { boundary, body: body.buffer };
+}
 
+/** Multipart upload of binary content. v0.1 scope. */
+export async function uploadFile(
+    accessToken: string,
+    parentId: string,
+    name: string,
+    content: ArrayBuffer
+): Promise<DriveFile> {
+    const { boundary, body } = buildMultipartBody(
+        JSON.stringify({ name, parents: [parentId] }),
+        content
+    );
     const res = await driveRequest(
         accessToken,
         `${DRIVE_UPLOAD}/files?uploadType=multipart&fields=id,name,mimeType,modifiedTime,size,md5Checksum`,
         {
             method: "POST",
             contentType: `multipart/related; boundary=${boundary}`,
-            body: body.buffer,
+            body,
         }
     );
     if (res.status !== 200) {
         throw new Error(
             `uploadFile failed (${res.status}): ${res.text.slice(0, 300)}`
+        );
+    }
+    return decodeFile(res.json as RawDriveFile);
+}
+
+/**
+ * Update the content of an existing Drive file in place. Used by the sync
+ * planner instead of delete-then-upload so a transient upload failure does
+ * not leave the user with no remote copy at all.
+ */
+export async function updateFile(
+    accessToken: string,
+    fileId: string,
+    content: ArrayBuffer
+): Promise<DriveFile> {
+    const { boundary, body } = buildMultipartBody(
+        // Empty metadata patch — we're only changing content, not the name
+        // or parents. PATCH with no fields leaves the existing metadata
+        // intact while replacing the file's media.
+        "{}",
+        content
+    );
+    const res = await driveRequest(
+        accessToken,
+        `${DRIVE_UPLOAD}/files/${fileId}?uploadType=multipart&fields=id,name,mimeType,modifiedTime,size,md5Checksum`,
+        {
+            method: "PATCH",
+            contentType: `multipart/related; boundary=${boundary}`,
+            body,
+        }
+    );
+    if (res.status !== 200) {
+        throw new Error(
+            `updateFile failed (${res.status}): ${res.text.slice(0, 300)}`
         );
     }
     return decodeFile(res.json as RawDriveFile);

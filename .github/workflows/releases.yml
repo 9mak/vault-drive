@@ -1,0 +1,46 @@
+name: Build vault-drive plugin
+
+on:
+    push:
+        tags:
+            - "*"
+
+permissions:
+    contents: write
+
+env:
+    PLUGIN_NAME: vault-drive
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+            - uses: pnpm/action-setup@v2
+              with:
+                  version: 9
+            - name: Build
+              id: build
+              run: |
+                  pnpm install
+                  pnpm run build
+                  mkdir ${{ env.PLUGIN_NAME }}
+                  cp main.js manifest.json styles.css ${{ env.PLUGIN_NAME }}
+                  zip -r ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}.zip ${{ env.PLUGIN_NAME }}
+            - name: Create Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  name: ${{ github.ref_name }}
+                  generate_release_notes: false
+                  body: See the [README](https://github.com/9mak/vault-drive/blob/master/README.md) for what changed.
+                  draft: false
+                  prerelease: false
+                  files: |
+                      main.js
+                      manifest.json
+                      styles.css
+                      ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}.zip

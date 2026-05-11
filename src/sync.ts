@@ -132,11 +132,35 @@ export async function runSync(
         }
     }
 
+    // Detect local files that share a basename. Without per-path namespacing
+    // on Drive, syncing them would silently overwrite each other. Skip the
+    // entire group and surface the collision to the user.
+    const localByBasename = new Map<string, string[]>();
+    for (const file of local) {
+        const name = file.path.split("/").pop()!;
+        const existing = localByBasename.get(name);
+        if (existing) existing.push(file.path);
+        else localByBasename.set(name, [file.path]);
+    }
+    const collidingBasenames = new Set<string>();
+    for (const [name, paths] of localByBasename.entries()) {
+        if (paths.length > 1) {
+            collidingBasenames.add(name);
+            result.errors.push(
+                `Skipped basename collision "${name}": ${paths.join(", ")}. ` +
+                    `Vault Drive v0.1 mirrors files by basename only — rename ` +
+                    `one of these or move it outside the include patterns.`
+            );
+            result.skipped += paths.length;
+        }
+    }
+
     const plan: PlanItem[] = [];
     const seenRemoteIds = new Set<string>();
 
     for (const file of local) {
         const name = file.path.split("/").pop()!;
+        if (collidingBasenames.has(name)) continue;
         const remoteMatch = remoteByName.get(name);
         if (!remoteMatch) {
             plan.push({ kind: "upload", localPath: file.path });
@@ -167,7 +191,17 @@ export async function runSync(
     for (const r of remote) {
         if (r.mimeType === "application/vnd.google-apps.folder") continue;
         if (!seenRemoteIds.has(r.id)) {
-            plan.push({ kind: "download", localPath: r.name, remoteId: r.id });
+            // Strip path traversal segments before letting Obsidian write
+            // — Drive could (in principle) return any string as `name`.
+            const safeName = r.name.replace(/^[./\\]+/, "").replace(/\.\./g, "");
+            if (safeName.length === 0 || safeName !== r.name) {
+                result.errors.push(
+                    `Skipping unsafe remote name: ${JSON.stringify(r.name)}`
+                );
+                result.skipped++;
+                continue;
+            }
+            plan.push({ kind: "download", localPath: safeName, remoteId: r.id });
         }
     }
 
@@ -181,16 +215,20 @@ export async function runSync(
                 }
                 const buf = await vault.readBinary(file);
                 if (item.remoteId) {
-                    // Replace-by-delete-and-recreate keeps v0.1 simple.
-                    await drive.deleteFile(accessToken, item.remoteId);
+                    // Update content in place via PATCH so a transient
+                    // failure leaves the existing remote copy untouched
+                    // (the previous delete-then-upload could lose remote
+                    // data on upload failure).
+                    await drive.updateFile(accessToken, item.remoteId, buf);
+                } else {
+                    const name = item.localPath.split("/").pop()!;
+                    await drive.uploadFile(
+                        accessToken,
+                        settings.rootFolderId,
+                        name,
+                        buf
+                    );
                 }
-                const name = item.localPath.split("/").pop()!;
-                await drive.uploadFile(
-                    accessToken,
-                    settings.rootFolderId,
-                    name,
-                    buf
-                );
                 result.uploaded++;
             } else if (
                 item.kind === "download" &&
